@@ -14,7 +14,7 @@ class SSA:
     U, S, V : 2d array, 1d array, 2d array, optional
         SVD components.
     """
-    def __init__(self, window_len:int, group_size:int, n_components:Optional[int]=None,
+    def __init__(self, window_len:int, group_size:Optional[int]=1, n_components:Optional[int]=None,
                  svd_solver:Optional[Callable]=None, store_svd:Optional[bool]=True):
         """Initialize.
 
@@ -63,19 +63,19 @@ class SSA:
             X = X.reshape(1, -1)
 
         # Diagonal counts
-        n_avg = diagonal_counts(len(X[0])-self.window_len+1, self.window_len)
+        dcounts = diagonal_counts(len(X[0])-self.window_len+1, self.window_len)
 
         # Run SSA
         for i, x in enumerate(X):
 
             _sig_components, _U, _S, _V = singular_spectrum_analysis(
-                x, self.window_len, self.group_size, self.n_components, return_svd=True,
-                svd_solver=self.svd_solver, n_avg=n_avg
+                x, self.window_len, self.n_components, self.group_size,
+                svd_solver=self.svd_solver, diag_counts=dcounts
             )
 
             if i == 0:
                 # Initalize arrays
-                self.sig_components = np.zeros((len(X), len(_sig_components)))
+                self.sig_components = np.zeros((len(X), *_sig_components.shape))
 
                 if self.store_svd:
                     self.U = np.zeros((len(X), *_U.shape))
@@ -87,7 +87,7 @@ class SSA:
             if self.store_svd:
                 self.U[i] = _U
                 self.S[i] = _S
-                self.V[i] = _V.T
+                self.V[i] = _V
 
 
 def singular_spectrum_analysis(sig:np.ndarray, window_len:int, n_components:int, group_size:Optional[int]=1,
@@ -134,7 +134,7 @@ def singular_spectrum_analysis(sig:np.ndarray, window_len:int, n_components:int,
         n_components = len(S)
 
     if diag_counts is None:
-        counts = diagonal_counts(X_hankel.shape[0], X_hankel.shape[1])
+        diag_counts = diagonal_counts(X_hankel.shape[0], X_hankel.shape[1])
 
     # 2. Reconstruction
     sig_components = np.zeros((int(np.ceil(n_components/group_size)), len(sig)))
@@ -146,12 +146,12 @@ def singular_spectrum_analysis(sig:np.ndarray, window_len:int, n_components:int,
             @ V[:, i_group:i_group+group_size].T
 
         # 2.2 Reconstruction: Diagonal averaging
-        diag = np.zeros(len(counts))
+        diag = np.zeros(len(diag_counts))
         for i in range(X_hat.shape[0]):
             for j in range(X_hat.shape[1]):
                 diag[i+j] += X_hat[i, j]
 
-        sig_components[i_sig] = diag / counts
+        sig_components[i_sig] = diag / diag_counts
 
     return sig_components, U, S, V
 
