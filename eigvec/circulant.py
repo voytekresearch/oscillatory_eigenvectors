@@ -79,7 +79,7 @@ def compute_kappa(X: np.ndarray, vecs: Optional[np.ndarray]=None) -> float:
 
     Notes
     -----
-    \kappa &= \frac{\sum_{i=0}^{n} \Lambda^2_{i, i}}{\sum_{i=0}^{n}\sum_{j=0}^{n}|\Lambda^2_{i, j}|}
+    \kappa &= \frac{\sum_{i=0}^{n} \Lambda^2_{i, i}}{\sum_{i=0}^{n}\sum_{j=0}^{n}\Lambda^2_{i, j}}
     """
 
     # Fourier modes (e.g. cosines)
