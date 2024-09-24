@@ -23,74 +23,64 @@ def sim_circulant(sig: np.ndarray) -> np.ndarray:
         X[i] = np.roll(sig, i)
     return X
 
-
-def compute_mse(X: np.ndarray, vecs: Optional[np.ndarray]=None) -> float:
-    """Compute MSE, a measure of how circulant a matrix is.
-
-    Parameters
-    ----------
-    X : 2d array
-        Arbitrary square matrix.
-        If from sim_circulant, epilson -> 0.
-    vecs : 2d array, optional, default: None
-        Eigenvectors to assume. Defaults to Fourier modes.
-
-    Returns
-    -------
-    mse : float
-        A measure of how diagonal the eigenvalues are.
-        Off-digonal values increase episolon.
-
-    Notes
-    -----
-    \text{MSE} = \frac{1}{n} ||\Lambda - \Lambda \odot I||^2
-    """
-
-    # Fourier modes (e.g. cosines)
-    if vecs is None:
-        n = len(X)
-        vecs = np.fft.fft(np.eye(n)) / np.sqrt(n)
-
-    # Eigenvalues given cosines as eigenvectors
-    Lambda = (vecs.conj().T @ X @ vecs).real
-
-    # Error measure
-    mse = (((Lambda * np.eye(len(Lambda))) - Lambda)**2).mean()
-
-    return mse
-
-
-def compute_kappa(X: np.ndarray, vecs: Optional[np.ndarray]=None) -> float:
-    """Compute kappa, a more stringent measure of how circulant a matrix is.
+def compute_kappa(X, method='svd', vecs=None, normalize=True):
+    """Compute kappa, a measure of how circulant a matrix is.
 
     Parameters
     ----------
     X : 2d array
-        Arbitrary square matrix.
-        If from sim_circulant, kapppa -> 1.
-    vecs : 2d array, optional, default: None
-        Eigenvectors to assume. Defaults to Fourier modes.
-
-    Returns
-    -------
-    kappa : float
-        A measure of how diagonal the eigenvalues are.
-        Off-digonal values decreases kappa.
-
-    Notes
-    -----
-    \kappa &= \frac{\sum_{i=0}^{n} \Lambda^2_{i, i}}{\sum_{i=0}^{n}\sum_{j=0}^{n}\Lambda^2_{i, j}}
+        An n-by-m matrix.
+    method : {'svd', 'eig'}
+        How to compute the eigenvalues. Approximately equivalent.
+        'svd' is orders of magnitude faster when m is large.
+    vecs : 2d array, default: None
+        Matrix of eigenvectors or, equivalently, right singular vectors.
+        Decreases compute time if provided, useful for computing many kappa
+        with many X that have same number columns.
+    normalize : bool, optional default: True
+        How to normalize X. True is equivalent to np.cov(X.T). False is
+        equivalent to X.T @ X.
     """
+    n = len(X[1]) - 1
 
-    # Fourier modes (e.g. cosines)
-    if vecs is None:
-        n = len(X)
-        vecs = np.fft.fft(np.eye(n)) / np.sqrt(n)
+    if normalize:
+        X = X - X.mean(axis=0)
+        norm = len(X[1]) - 1
+    else:
+        norm = 1
 
-    # Eigenvalues given cosines as eigenvectors
-    Lambda = (vecs.conj().T @ X @ vecs).real
+    if method == 'eig':
+        cov = X.T @ X
+        cov = cov / norm
+        vals, vecs = compute_eig(cov)
+
+    elif method == 'svd':
+        X = X / norm
+        U, S, V = compute_svd(X)
+        vals = S
 
     # Kappa
-    kappa = (np.diag(Lambda)**2).sum() / (Lambda**2).sum()
+    vals = np.abs(vals)
+    n = len(X[0])
+    trace = np.diag(vals).sum()
+    diag_mean = trace / n
+    off_diag_mean = (vals.sum() - trace) / (n**2 - n)
+    kappa = diag_mean / (diag_mean + off_diag_mean)
 
     return kappa
+
+def compute_svd(X, V=None):
+    n = len(X[0])
+    if V is None:
+        V = np.fft.fft(np.eye(n)) / np.sqrt(n)
+    U = X @ V
+    S = U.conj().T @ U
+    return U, S, V
+
+def compute_eig(cov, vecs=None):
+    n = len(cov)
+    if vecs is None:
+        vecs = np.fft.fft(np.eye(n)) / np.sqrt(n)
+    vals = vecs.conj().T @ cov @ vecs
+    return vals, vecs
+
