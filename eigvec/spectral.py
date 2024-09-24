@@ -3,13 +3,13 @@
 import numpy as np
 
 
-def fft_to_eigvals_to_psd(X):
+def compute_eigenspectrum(cov, fs):
     """Compute PSD using: fft -> eigvals -> PSD.
 
     Parameters
     ----------
-    X : 2d array
-        Input matrix, e.g. covariance.
+    cov : 2d array
+        Covariance matrix.
 
     Returns
     -------
@@ -18,38 +18,21 @@ def fft_to_eigvals_to_psd(X):
     powers : 1d array
         Power spectral density.
     """
+
     # 2d fft
-    coefs = np.fft.fft2(X, norm="ortho")
+    coefs = np.fft.fft2(cov, norm="ortho")
 
     # fft -> eigenvalues
     #   eigvals of cov == power
-    powers = fftcoefs_to_eigvals(coefs).real
-    powers = powers[:len(coefs)//2-1]
+    powers = np.diag(np.roll(coefs.real[:, ::-1], 1))
+    powers = powers.copy()
+    powers[0] = np.sum(cov) / len(cov)
 
-    # frequencies
-    freqs = np.fft.fftfreq(len(coefs), 1)[:len(coefs)//2]
-    freqs= freqs[1:]
+    # Take positive powers
+    n = int(np.ceil(len(cov)/2))
+    powers = powers[:n]
+
+    # Frequencies
+    freqs = np.fft.fftfreq(len(coefs), 1/fs)[:n]
 
     return freqs, powers
-
-
-def fftcoefs_to_eigvals(coefs):
-    """Extracts eigenvalues out of the 2d fft.
-
-    Parameters
-    ----------
-    coefs : 2d array
-        2d FFT coefficients.
-
-    Returns
-    -------
-    1d array
-        Diagonal, from lower left to upper right.
-
-    Notes
-    -----
-    1. Gets these indices out of the 2d fft:
-       [1, -1], [2, -2], [3, -3] ...
-    2. The DC offset is not included, expect n-1 values.
-    """
-    return np.diag(coefs[:, ::-1], -1)
