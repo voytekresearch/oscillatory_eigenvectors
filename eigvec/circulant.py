@@ -23,51 +23,69 @@ def sim_circulant(sig: np.ndarray) -> np.ndarray:
         X[i] = np.roll(sig, i)
     return X
 
-def compute_kappa(X, method='svd', vecs=None, normalize=True):
-    """Compute kappa, a measure of how circulant a matrix is.
 
-    Parameters
-    ----------
-    X : 2d array
-        An n-by-m matrix.
-    method : {'svd', 'eig'}
-        How to compute the eigenvalues. Approximately equivalent.
-        'svd' is orders of magnitude faster when m is large.
-    vecs : 2d array, default: None
-        Matrix of eigenvectors or, equivalently, right singular vectors.
-        Decreases compute time if provided, useful for computing many kappa
-        with many X that have same number columns.
-    normalize : bool, optional default: True
-        How to normalize X. True is equivalent to np.cov(X.T). False is
-        equivalent to X.T @ X.
+def compute_kappa(
+    X,
+    normalize=True,
+    use_fft=True,
+    eps=1e-12,
+):
     """
-    n = len(X[1]) - 1
+    Estimate population-level Fourier/circulant diagonality.
 
-    if normalize:
-        X = X - X.mean(axis=0)
-        norm = len(X[1]) - 1
+    Uses:
+        A = F* C F
+
+    and compares observed off-diagonal Fourier covariance energy to the
+    expected finite-sample off-diagonal energy under a Fourier-diagonal
+    population covariance.
+
+    This makes white noise score near 1 across matrix sizes.
+    """
+    X = np.asarray(X)
+
+    if X.ndim != 2:
+        raise ValueError("X must be 2D: rows=observations, cols=time.")
+
+    m, n = X.shape
+    df = m
+    norm = m if normalize else 1.0
+
+    if df <= 0:
+        raise ValueError("Need at least two rows.")
+
+    if use_fft:
+        Z = np.fft.fft(X, axis=1) / np.sqrt(n)
+        A = (Z.conj().T @ Z) / norm
     else:
-        norm = 1
+        F = np.fft.fft(np.eye(n), axis=0) / np.sqrt(n)
+        C = (X.T @ X) / norm
+        A = F.conj().T @ C @ F
 
-    if method == 'eig':
-        cov = X.T @ X
-        cov = cov / norm
-        vals, vecs = compute_eig(cov)
+    d = np.real(np.diag(A))
+    d = np.maximum(d, eps)
 
-    elif method == 'svd':
-        X = X / norm
-        U, S, V = compute_svd(X)
-        vals = S
+    total_sq = np.sum(np.abs(A) ** 2)
+    diag_sq = np.sum(d ** 2)
+    off_sq = total_sq - diag_sq
 
-    # Kappa
-    vals = np.abs(vals)
-    n = len(X[0])
-    trace = np.diag(vals).sum()
-    diag_mean = trace / n
-    off_diag_mean = (vals.sum() - trace) / (n**2 - n)
-    kappa = diag_mean / (diag_mean + off_diag_mean)
+    # Expected finite-sample off-diagonal energy under diagonal Fourier covariance.
+
+    # For i != j:
+    #   E |A_ij|^2 ≈ d_i d_j / df
+
+    # Summed over i != j:
+    #   sum_{i != j} d_i d_j / df
+    expected_off_sq = ((d.sum() ** 2) - np.sum(d ** 2)) / df
+
+    # Excess off-diagonal energy beyond finite-sample floor
+    excess_off_sq = max(off_sq - expected_off_sq, 0.0)
+
+    kappa = diag_sq / (diag_sq + excess_off_sq + eps)
+    kappa = float(np.real(kappa))
 
     return kappa
+
 
 def compute_svd(X, V=None):
     n = len(X[0])
